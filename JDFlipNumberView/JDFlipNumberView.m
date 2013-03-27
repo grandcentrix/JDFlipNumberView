@@ -11,7 +11,7 @@
 
 
 static CGFloat JDFlipAnimationMinimumTimeInterval = 0.01; // = 100 fps
-static CGFloat JDFlipViewRelativeMargin = 0.15; // use 15% of width as margin
+static CGFloat JDFlipViewRelativeMargin = 0.01; // use 15% of width as margin
 
 
 typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {

@@ -46,28 +46,28 @@ static CGFloat kFlipAnimationUpdateInterval = 0.5; // = 2 times per second
         self.backgroundColor = [UIColor clearColor];
         self.autoresizesSubviews = NO;
         self.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleBottomMargin | UIViewAutoresizingFlexibleRightMargin;
-		
+
         // setup flipviews
         self.dayFlipNumberView = [[JDFlipNumberView alloc] initWithDigitCount:_dayDigitCount];
         self.hourFlipNumberView = [[JDFlipNumberView alloc] initWithDigitCount:2];
         self.minuteFlipNumberView = [[JDFlipNumberView alloc] initWithDigitCount:2];
         self.secondFlipNumberView = [[JDFlipNumberView alloc] initWithDigitCount:2];
-        
+
         self.hourFlipNumberView.maximumValue = 23;
         self.minuteFlipNumberView.maximumValue = 59;
         self.secondFlipNumberView.maximumValue = 59;
 
-        [self setZDistance: 60];
-        
+        [self setZDistance:60];
+
         // set inital frame
         CGRect frame = self.hourFlipNumberView.frame;
-        self.frame = CGRectMake(0, 0, frame.size.width*(dayDigits+7), frame.size.height);
-        
+        self.frame = CGRectMake(0, 0, frame.size.width * (dayDigits + 7), frame.size.height);
+
         // add subviews
-        for (JDFlipNumberView* view in @[self.dayFlipNumberView, self.hourFlipNumberView, self.minuteFlipNumberView, self.secondFlipNumberView]) {
+        for (JDFlipNumberView *view in @[self.dayFlipNumberView, self.hourFlipNumberView, self.minuteFlipNumberView, self.secondFlipNumberView]) {
             [self addSubview:view];
         }
-        
+
         // set inital dates
         self.targetDate = [NSDate date];
         [self setupUpdateTimer];
@@ -92,7 +92,7 @@ static CGFloat kFlipAnimationUpdateInterval = 0.5; // = 2 times per second
     }
     
     CGFloat digitWidth = frame.size.width/(self.dayFlipNumberView.digitCount+7);
-    CGFloat margin     = digitWidth/3.0;
+    CGFloat margin     = 4.0f;
     CGFloat currentX   = 0;
 
     // resize first flipview
