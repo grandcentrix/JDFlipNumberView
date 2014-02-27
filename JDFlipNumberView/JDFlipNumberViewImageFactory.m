@@ -8,145 +8,135 @@
 
 #import "JDFlipNumberViewImageFactory.h"
 
-static JDFlipNumberViewImageFactory *sharedInstance;
-
 @interface JDFlipNumberViewImageFactory ()
-@property (nonatomic, strong) NSArray *topImages;
-@property (nonatomic, strong) NSArray *bottomImages;
-@property (nonatomic, strong) NSString *imageBundle;
-- (void)setup;
+@property (nonatomic, strong) NSMutableDictionary *topImages;
+@property (nonatomic, strong) NSMutableDictionary *bottomImages;
 @end
 
 @implementation JDFlipNumberViewImageFactory
 
-+ (JDFlipNumberViewImageFactory*)sharedInstance;
++ (instancetype)sharedInstance;
 {
-    if (sharedInstance != nil) {
-        return sharedInstance;
-    }
+    static JDFlipNumberViewImageFactory *_sharedInstance;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        _sharedInstance = [[self alloc] init];
+    });
     
-    return [[self alloc] init];
+    return _sharedInstance;
 }
 
 - (id)init
 {
-    @synchronized(self)
-    {
-        if (sharedInstance != nil) {
-            return sharedInstance;
-        }
+    self = [super init];
+    if (self) {
+        _topImages = [NSMutableDictionary dictionary];
+        _bottomImages = [NSMutableDictionary dictionary];
         
-        self = [super init];
-        if (self) {
-            sharedInstance = self;
-            self.imageBundle = @"JDFlipNumberView";
-            [self setup];
-        }
-        return self;
+        // register for memory warnings
+        [[NSNotificationCenter defaultCenter]
+         addObserver:self selector:@selector(didReceiveMemoryWarning:)
+         name:UIApplicationDidReceiveMemoryWarningNotification object:nil];
     }
-}
-
-- (void)setup;
-{
-    // create default images
-    [self generateImagesFromBundleNamed:self.imageBundle];
-    
-    // register for memory warnings
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(didReceiveMemoryWarning:)
-                                                 name:UIApplicationDidReceiveMemoryWarningNotification
-                                               object:nil];
-}
-
-+ (id)allocWithZone:(NSZone *)zone;
-{
-    if (sharedInstance != nil) {
-        return sharedInstance;
-    }
-    return [super allocWithZone:zone];
+    return self;
 }
 
 #pragma mark -
 #pragma mark getter
 
-- (NSArray *)topImages;
+- (NSArray *)topImagesForBundleNamed:(NSString *)bundleName;
 {
-    @synchronized(self)
-    {
-        if (_topImages.count == 0) {
-            [self generateImagesFromBundleNamed:self.imageBundle];
-        }
-        
-        return _topImages;
+    if ([_topImages[bundleName] count] == 0) {
+        [self generateImagesFromBundleNamed:bundleName];
     }
+    
+    return _topImages[bundleName];
 }
 
-- (NSArray *)bottomImages;
+- (NSArray *)bottomImagesForBundleNamed:(NSString *)bundleName;
 {
-    @synchronized(self)
-    {
-        if (_bottomImages.count == 0) {
-            [self generateImagesFromBundleNamed:self.imageBundle];
-        }
-        
-        return _bottomImages;
+    if ([_bottomImages[bundleName] count] == 0) {
+        [self generateImagesFromBundleNamed:bundleName];
     }
+    
+    return _bottomImages[bundleName];
 }
 
-- (CGSize)imageSize
+- (CGSize)imageSizeForBundleNamed:(NSString *)bundleName;
 {
-    return ((UIImage*)self.topImages[0]).size;
+    NSArray *images = self.topImages[bundleName];
+    if (images.count > 0) {
+        return [images[0] size];
+    }
+    return CGSizeZero;
 }
 
 #pragma mark -
 #pragma mark image generation
+
 - (void)generateImagesFromBundleNamed:(NSString*)bundleName;
 {
-    self.imageBundle = bundleName;
     // create image array
 	NSMutableArray* topImages = [NSMutableArray arrayWithCapacity:10];
 	NSMutableArray* bottomImages = [NSMutableArray arrayWithCapacity:10];
 	
+    // append .bundle to name
+    NSString *filename = bundleName;
+    if (![filename hasSuffix:@".bundle"]) filename = [NSString stringWithFormat: @"%@.bundle", filename];
+    NSString *bundlePath = [[NSBundle mainBundle] pathForResource:filename ofType:nil];
+    NSAssert(bundlePath != nil, @"Bundle named '%@' not found!", filename);
+    if (!bundlePath) return;
+    
 	// create bottom and top images
-    for (NSInteger j=0; j<10; j++) {
-        for (int i=0; i<2; i++) {
-            NSString *imageName = [NSString stringWithFormat: @"%d.png", j];
-            NSString *bundleImageName = [NSString stringWithFormat: @"%@.bundle/%@", bundleName, imageName];
-            NSString *path = [[NSBundle mainBundle] pathForResource:bundleImageName ofType:nil];
-			UIImage *sourceImage = [[UIImage alloc] initWithContentsOfFile:path];
-			CGSize size		= CGSizeMake(sourceImage.size.width, sourceImage.size.height/2);
-			CGFloat yPoint	= (i==0) ? 0 : -size.height;
-			
-            NSAssert(sourceImage != nil, @"Did not find image %@.png in bundle %@.bundle", imageName, bundleName);
-            
-            // draw half of image and create new image
-			UIGraphicsBeginImageContextWithOptions(size, NO, [UIScreen mainScreen].scale);
-			[sourceImage drawAtPoint:CGPointMake(0,yPoint)];
-			UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
-			UIGraphicsEndImageContext();
-            
-            // save image
-            if (i==0) {
-                [topImages addObject:image];
-            } else {
-                [bottomImages addObject:image];
-            }
-		}
+    for (NSInteger digit=0; digit<10; digit++)
+    {
+        // create path & image
+        NSString *imageName = [NSString stringWithFormat: @"%ld.png", (long)digit];
+        NSString *bundleImageName = [NSString stringWithFormat: @"%@/%@", filename, imageName];
+        NSString *path = [[NSBundle mainBundle] pathForResource:bundleImageName ofType:nil];
+        UIImage *sourceImage = [[UIImage alloc] initWithContentsOfFile:path];
+        NSAssert(sourceImage != nil, @"Did not find image '%@' in bundle named '%@'", imageName, filename);
+        
+        // generate & save images
+        NSArray *images = [self generateImagesFromImage:sourceImage];
+        [topImages addObject:images[0]];
+        [bottomImages addObject:images[1]];
 	}
 	
     // save images
-	self.topImages    = [NSArray arrayWithArray:topImages];
-	self.bottomImages = [NSArray arrayWithArray:bottomImages];
+	self.topImages[bundleName]    = [NSArray arrayWithArray:topImages];
+	self.bottomImages[bundleName] = [NSArray arrayWithArray:bottomImages];
+}
+
+- (NSArray*)generateImagesFromImage:(UIImage*)image;
+{
+    NSMutableArray *images = [NSMutableArray array];
+    
+    for (int i=0; i<2; i++) {
+        CGSize size = CGSizeMake(image.size.width, image.size.height/2);
+        CGFloat yPoint = (i==0) ? 0 : -size.height;
+        
+        // draw half of the image in a new image
+        UIGraphicsBeginImageContextWithOptions(size, NO, [UIScreen mainScreen].scale);
+        [image drawAtPoint:CGPointMake(0,yPoint)];
+        UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+        UIGraphicsEndImageContext();
+        
+        // save image
+        [images addObject:image];
+    }
+    
+    return images;
 }
 
 #pragma mark -
 #pragma mark memory
 
-// clear memory
 - (void)didReceiveMemoryWarning:(NSNotification*)notification;
 {
-    self.topImages = @[];
-    self.bottomImages = @[];
+    // remove all saved images
+    _topImages = [NSMutableDictionary dictionary];
+    _bottomImages = [NSMutableDictionary dictionary];
 }
 
 @end

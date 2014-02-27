@@ -5,6 +5,7 @@
 //  Copyright 2011 Markus Emrich. All rights reserved.
 //
 
+#import <QuartzCore/QuartzCore.h>
 #import "JDFlipNumberDigitView.h"
 
 #import "JDFlipNumberView.h"
@@ -20,12 +21,14 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
 };
 
 @interface JDFlipNumberView ()
+@property (nonatomic, copy) NSString *imageBundleName;
 @property (nonatomic, strong) NSArray *digitViews;
 @property (nonatomic, assign) JDFlipAnimationType animationType;
 
 @property (nonatomic, strong) NSTimer *animationTimer;
 @property (nonatomic, assign) NSTimeInterval neededInterval;
 @property (nonatomic, assign) NSTimeInterval intervalRest;
+@property (nonatomic, assign) BOOL delegateEnabled;
 @property (nonatomic, assign) BOOL targetMode;
 @property (nonatomic, assign) NSInteger targetValue;
 @property (nonatomic, copy) JDFlipAnimationCompletionBlock completionBlock;
@@ -37,41 +40,57 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
 
 @implementation JDFlipNumberView
 
-- (id)init;
+- (id)initWithFrame:(CGRect)frame;
 {
-	return [self initWithDigitCount:1];
-}
-
-- (id)initWithDigitCount:(NSUInteger)digitCount;
-{
-    self = [super initWithFrame:CGRectZero];
-    if (self)
-	{
-		self.backgroundColor = [UIColor clearColor];
-        self.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleBottomMargin | UIViewAutoresizingFlexibleRightMargin;
-        self.autoresizesSubviews = NO;
-        _digitCount = digitCount;
-        
-        // init single digit views
-		JDFlipNumberDigitView* view = nil;
-		NSMutableArray* allViews = [[NSMutableArray alloc] initWithCapacity:digitCount];
-		for (int i = 0; i < digitCount; i++) {
-			view = [[JDFlipNumberDigitView alloc] init];
-			view.frame = CGRectMake(i*view.frame.size.width, 0, view.frame.size.width, view.frame.size.height);
-			[self addSubview: view];
-			[allViews addObject: view];
-		}
-		self.digitViews = [[NSArray alloc] initWithArray: allViews];
-        
-        // setup properties
-        self.animationType = JDFlipAnimationTypeTopDown;
-        self.maximumValue = pow(10, digitCount)-1;
-        self.targetMode = NO;
-		super.frame = CGRectMake(0, 0, digitCount*view.frame.size.width, view.frame.size.height);
+    self = [super initWithFrame:frame];
+    if (self) {
+        [self commonInitForDigitCount:1];
     }
     return self;
 }
 
+- (id)initWithCoder:(NSCoder *)aDecoder
+{
+    self = [super initWithCoder:aDecoder];
+    if (self) {
+        [self commonInitForDigitCount:3];
+    }
+    return self;
+}
+
+- (id)initWithDigitCount:(NSUInteger)digitCount;
+{
+    return [self initWithDigitCount:digitCount imageBundleName:nil];
+}
+
+- (id)initWithDigitCount:(NSUInteger)digitCount
+         imageBundleName:(NSString*)imageBundleName;
+{
+    self = [super initWithFrame:CGRectZero];
+    if (self) {
+        _imageBundleName = imageBundleName;
+        [self commonInitForDigitCount:digitCount];
+    }
+    return self;
+}
+
+- (void)commonInitForDigitCount:(NSUInteger)digitCount;
+{
+    self.backgroundColor = [UIColor clearColor];
+    self.autoresizesSubviews = NO;
+    
+    // setup properties
+    self.digitCount = digitCount;
+    self.animationType = JDFlipAnimationTypeTopDown;
+    self.reverseFlippingDisabled = YES;
+    self.targetMode = NO;
+    self.delegateEnabled = YES;
+    
+    // update frame
+    CGSize digitSize = [self.digitViews.lastObject bounds].size;
+    super.frame = CGRectMake(self.frame.origin.x, self.frame.origin.y,
+                             digitCount*digitSize.width, digitSize.height);
+}
 
 #pragma mark -
 #pragma mark external access
@@ -80,7 +99,7 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
 {
 	NSMutableString* stringValue = [NSMutableString stringWithCapacity:self.digitViews.count];
 	for (JDFlipNumberDigitView* view in self.digitViews) {
-		[stringValue appendFormat: @"%d", view.value];
+		[stringValue appendFormat: @"%lu", (unsigned long)view.value];
 	}
 	
 	return [stringValue intValue];
@@ -88,7 +107,6 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
 
 - (void)setValue:(NSInteger)value;
 {
-    [self stopAnimation];
     [self setValue:value animated:NO];
 }
 
@@ -105,6 +123,9 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
         self.animationType = JDFlipAnimationTypeBottomUp;
     }
     
+    // changed by GCX (Nikita Balakirevs) Always use bottom-to-up flip animation
+    self.animationType = JDFlipAnimationTypeBottomUp;
+    
     // animate to new value
     [self setValue:newValue animatedInCurrentDirection:animated];
 }
@@ -115,12 +136,12 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
     newValue = [self validValueFromValue:newValue];
     
     // inform delegate
-	if (animated && [self.delegate respondsToSelector: @selector(flipNumberView:willChangeToValue:)]) {
+	if (animated && self.delegateEnabled && !self.targetMode && [self.delegate respondsToSelector: @selector(flipNumberView:willChangeToValue:)]) {
 		[self.delegate flipNumberView:self willChangeToValue:newValue];
 	}
     
     // convert to string
-	NSString* stringValue = [NSString stringWithFormat: @"%50d", newValue];
+	NSString* stringValue = [NSString stringWithFormat: @"%50ld", (long)newValue];
 	
     // udpate all flipviews, that have changed
     __block NSUInteger completedDigits = 0;
@@ -129,11 +150,15 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
 		NSInteger newValue = [[stringValue substringWithRange:NSMakeRange(stringValue.length-(1+i), 1)] intValue];
         if (newValue != view.value) {
             if(animated) {
-                [view setValue:newValue withAnimationType:self.animationType completion:^(BOOL completed){
-                    completedDigits = completedDigits + 1;
+                JDFlipAnimationType type = self.animationType;
+                if (type == JDFlipAnimationTypeBottomUp && self.reverseFlippingDisabled) {
+                    type = JDFlipAnimationTypeTopDown;
+                }
+                [view setValue:newValue withAnimationType:type completion:^(BOOL completed){
+                    completedDigits++;
                     if (completedDigits == self.digitViews.count) {
                         // inform delegate, when all digits finished animation
-                        if (animated && [self.delegate respondsToSelector: @selector(flipNumberView:didChangeValueAnimated:)]) {
+                        if (animated && !self.targetMode && [self.delegate respondsToSelector: @selector(flipNumberView:didChangeValueAnimated:)]) {
                             [self.delegate flipNumberView:self didChangeValueAnimated:NO];
                         }
                     }
@@ -160,6 +185,11 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
         value += (self.maximumValue+1);
     }
 	return value%(self.maximumValue+1);
+}
+
+- (NSUInteger)zDistance;
+{
+    return [self.digitViews[0] zDistance];
 }
 
 - (void)setZDistance:(NSUInteger)zDistance;
@@ -190,6 +220,50 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
         JDFlipNumberDigitView *digit = self.digitViews[i];
         digit.animationDuration = animationDuration;
         animationDuration *= 10;
+    }
+}
+
+- (void)setDigitCount:(NSUInteger)digitCount;
+{
+    digitCount = MAX(1,digitCount);
+    if (digitCount == _digitCount) return;
+    _digitCount = digitCount;
+    
+    // remember value
+    NSInteger currentValue = self.value;
+    
+    // remove current digit views
+    for (JDFlipNumberDigitView *digit in self.digitViews) {
+        [digit removeFromSuperview];
+    }
+    
+    // init & add new digit views
+    JDFlipNumberDigitView* view = nil;
+    NSMutableArray* digitViews = [[NSMutableArray alloc] initWithCapacity:digitCount];
+    for (int i = 0; i < digitCount; i++) {
+        view = [[JDFlipNumberDigitView alloc] initWithImageBundle:self.imageBundleName];
+        [self addSubview:view];
+        [digitViews addObject:view];
+    }
+    self.digitViews = [digitViews copy];
+    
+    // update max value
+    self.maximumValue = pow(10, digitCount)-1;
+    
+    // set value again
+    [self setValue:currentValue];
+    
+    // relayout
+    [self setNeedsLayout];
+}
+
+- (void)setImageBundleName:(NSString*)imageBundleName;
+{
+    _imageBundleName = imageBundleName;
+    
+    // update digits
+    for (JDFlipNumberDigitView *digit in self.digitViews) {
+        [digit setImageBundleName:imageBundleName];
     }
 }
 
@@ -274,11 +348,12 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
             (self.animationType == JDFlipAnimationTypeTopDown && newValue > self.targetValue) ||
             (self.animationType == JDFlipAnimationTypeBottomUp && newValue < self.targetValue)) {
             [self setValue:self.targetValue animatedInCurrentDirection:YES];
-            if (self.completionBlock != nil) {
-                self.completionBlock(YES);
-                self.completionBlock = nil;
-            }
+            JDFlipAnimationCompletionBlock completion = self.completionBlock;
+            self.completionBlock = nil;
             [self stopAnimation];
+            if (completion) {
+                completion(YES);
+            }
             return;
         }
     }
@@ -307,7 +382,7 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
     }
     
 	// save target value in valid range
-	NSString* strvalue = [NSString stringWithFormat: @"%50d", newValue];
+	NSString* strvalue = [NSString stringWithFormat: @"%50ld", (long)newValue];
 	strvalue = [strvalue substringWithRange:NSMakeRange(strvalue.length-self.digitViews.count, self.digitViews.count)];
 	self.targetValue = [self validValueFromValue:[strvalue intValue]];
 
@@ -315,16 +390,27 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
         return;
     }
     
+    // inform delegate
+	if ([self.delegate respondsToSelector: @selector(flipNumberView:willChangeToValue:)]) {
+		[self.delegate flipNumberView:self willChangeToValue:self.targetValue];
+	}
+    
 	// determine direction
 	JDFlipAnimationDirection direction = JDFlipAnimationDirectionUp;
 	if (self.targetValue < self.value) {
         direction = JDFlipAnimationDirectionDown;
 	}
 	
+    // don't send delegate messages
+    self.delegateEnabled = NO;
+    
 	// determine speed per digit
 	NSInteger difference = ABS(self.targetValue-self.value);
 	CGFloat speed = ABS(duration/difference);
 	[self animateInDirection:direction timeInterval:speed];
+	
+    // send delegate messages again
+    self.delegateEnabled = YES;
 	
 	// enable target mode (this has do be done after animation start)
 	self.targetMode = YES;
@@ -336,43 +422,105 @@ typedef NS_OPTIONS(NSUInteger, JDFlipAnimationDirection) {
 
 - (void)stopAnimation;
 {
-    if (self.targetMode && self.completionBlock != nil) {
-        self.completionBlock(NO);
-    }
-    
 	self.targetMode = NO;
     [self.animationTimer invalidate];
     self.animationTimer = nil;
     self.intervalRest = 0;
     self.completionBlock = nil;
+    
+    if (self.targetMode) {
+        // inform delegate
+        if ([self.delegate respondsToSelector:@selector(flipNumberView:didChangeValueAnimated:)]) {
+            [self.delegate flipNumberView:self didChangeValueAnimated:NO];
+        }
+        // call completion block
+        if (self.completionBlock != nil) {
+            JDFlipAnimationCompletionBlock completion = self.completionBlock;
+            self.completionBlock = nil;
+            completion(NO);
+        }
+    }
 }
 
 #pragma mark -
-#pragma mark resizing
+#pragma mark layout
 
-- (void)setFrame:(CGRect)frame;
+- (NSUInteger)marginForWidth:(CGFloat)width;
+{
+    if (self.digitViews.count <= 1) return 0;
+    return ((width*JDFlipViewRelativeMargin)/(self.digitViews.count-1));
+}
+
+- (CGSize)sizeThatFits:(CGSize)size;
 {
 	if (self.digitViews && self.digitViews.count > 0)
     {
-        JDFlipNumberView* previousView = nil;
+        CGFloat xpos = 0;
+        CGSize lastSize = CGSizeZero;
 		NSUInteger i, count = self.digitViews.count;
-        NSUInteger xWidth = (frame.size.width*(1-JDFlipViewRelativeMargin))/count;
+        NSUInteger margin = [self marginForWidth:size.width];
+        NSUInteger xWidth = ((size.width-margin*(count-1))/count);
 		for (i = 0; i < count; i++) {
-			JDFlipNumberView* view = self.digitViews[i];
-            CGFloat xpos = 0;
-            if (previousView) {
-                xpos = floor(CGRectGetMaxX(previousView.frame)+CGRectGetWidth(previousView.frame)*JDFlipViewRelativeMargin);
-            }
-			view.frame = CGRectMake(xpos, 0, xWidth, frame.size.height);
-			previousView = self.digitViews[i];
+			JDFlipNumberDigitView* view = self.digitViews[i];
+			lastSize = [view sizeThatFits:CGSizeMake(xWidth, size.height)];
+			xpos += lastSize.width + margin;
 		}
+        xpos -= margin;
         
-		// take bottom right of last view for new size, to match size of subviews
-		frame.size.width  = ceil(previousView.frame.size.width  + previousView.frame.origin.x);
-		frame.size.height = ceil(previousView.frame.size.height + previousView.frame.origin.y);
+        // take bottom right of last view for new size, to match size of subviews
+        return CGSizeMake(floor(xpos), floor(lastSize.height));
 	}
     
-    [super setFrame:frame];
+    return [super sizeThatFits:size];
+}
+
+- (void)layoutSubviews;
+{
+    [super layoutSubviews];
+    
+	if (self.digitViews && self.digitViews.count > 0)
+    {
+        CGSize frameSize = self.bounds.size;
+        
+        CGFloat xpos = 0;
+		NSUInteger i, count = self.digitViews.count;
+        NSUInteger margin = [self marginForWidth:frameSize.width];
+        NSUInteger xWidth = ((frameSize.width-margin*(count-1))/count);
+        
+        // allow upscaling for layout
+		for (i = 0; i < count; i++) {
+			JDFlipNumberDigitView* view = self.digitViews[i];
+            view.upscalingAllowed = YES;
+        }
+        
+        // apply calculated size to first digitView & update to actual sizes
+        JDFlipNumberDigitView *firstDigit = self.digitViews[0];
+        firstDigit.frame = CGRectMake(0, 0, floor(xWidth), floor(frameSize.height));
+        xWidth = firstDigit.frame.size.width;
+        margin = [self marginForWidth:xWidth];
+        
+		for (i = 0; i < count; i++) {
+			JDFlipNumberDigitView* view = self.digitViews[i];
+			view.frame = CGRectMake(round(xpos), 0, floor(xWidth), floor(frameSize.height));
+            xpos = floor(CGRectGetMaxX(view.frame)+margin);
+		}
+        xpos -= margin;
+        
+        // center views in superview
+        CGPoint centerOffset = CGPointMake(xpos, firstDigit.frame.size.height);
+        centerOffset.x = floor((self.bounds.size.width - centerOffset.x)/2.0);
+        centerOffset.y = floor((self.bounds.size.height - centerOffset.y)/2.0);
+        for (NSInteger i=0; i<count; i++) {
+			JDFlipNumberDigitView* view = self.digitViews[i];
+            view.frame = CGRectOffset(view.frame, centerOffset.x, centerOffset.y);
+        }
+        
+        // stop upscaling, so sizeToFit works properly
+		for (i = 0; i < count; i++) {
+			JDFlipNumberDigitView* view = self.digitViews[i];
+            view.upscalingAllowed = NO;
+        }
+	}
 }
 
 @end

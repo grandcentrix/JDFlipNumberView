@@ -19,13 +19,15 @@ typedef void(^JDDigitAnimationCompletionBlock)(BOOL finished);
 
 @interface JDFlipNumberDigitView : UIView
 
-@property (nonatomic, assign) CGFloat animationDuration;
 @property (nonatomic, assign) NSUInteger value;
+@property (nonatomic, assign) CGFloat animationDuration;
+@property (nonatomic, assign) BOOL upscalingAllowed;
+@property (nonatomic, assign) NSUInteger zDistance;
+@property (nonatomic, copy) NSString *imageBundleName;
+
+- (id)initWithImageBundle:(NSString*)imageBundleName;
 
 - (void)setValue:(NSUInteger)value withAnimationType:(JDFlipAnimationType)animationType
       completion:(JDDigitAnimationCompletionBlock)completionBlock;
-
-- (void)setFrame:(CGRect)rect allowUpscaling:(BOOL)upscalingAllowed;
-- (void)setZDistance:(NSUInteger)zDistance;
 
 @end
