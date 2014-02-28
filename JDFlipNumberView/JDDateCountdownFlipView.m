@@ -117,8 +117,8 @@ static CGFloat kFlipAnimationUpdateInterval = 0.5; // = 2 times per second
         return [super sizeThatFits:size];
     }
     
-    CGFloat digitWidth = 33;
-    CGFloat margin     = 6;
+    CGFloat digitWidth = 30;
+    CGFloat margin     = 4;
     CGFloat currentX   = 0;
     
     // check first number size
@@ -151,8 +151,8 @@ static CGFloat kFlipAnimationUpdateInterval = 0.5; // = 2 times per second
     }
     
     CGSize size = [self sizeThatFits:self.bounds.size];
-    CGFloat digitWidth = 33;
-    CGFloat margin     = 6;
+    CGFloat digitWidth = 30;
+    CGFloat margin     = 4;
     CGFloat currentX = 0.0f;
     
     // resize first flipview
